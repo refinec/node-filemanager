@@ -1,5 +1,4 @@
 const express = require("express");
-const app = express();
 const router = express.Router();
 const cors = require('cors');
 const path = require('path');
@@ -46,7 +45,6 @@ module.exports = function (options) {
     internalClient = ClientMap.get("internalClient");
     //添加这个就解决了
     router.use(cors({
-        // origin: ['http://localhost:8080', 'http://hallelujah.top'], //指定接受的地址
         origin: 'http://localhost:8080', //指定接受的地址
         // origin: '*', //指定接受的地址
         methods: ['GET', 'POST'], //指定接受的请求类型
@@ -108,36 +106,9 @@ module.exports = function (options) {
     router.get('/', (req, res) => {
         res.status(200)
         res.send();
-        // if (req.session.isLogin) {
-        //     res.send({
-        //         isLogin: true
-        //     });
-        // } else {
-        //     res.send({
-        //         isLogin: false
-        //     })
-        // }
-
-        // if (req.session.name) {
-        //     // 登录
-        //     res.send({
-        //         result: {
-        //             status: 'success',
-        //             message: `欢迎回来${req.session.name}`
-        //         }
-        //     });
-        // } else {
-        //     // 未登录
-        //     res.send({
-        //         result: {
-        //             status: 'danger',
-        //             message: "未登录"
-        //         }
-        //     })
-        // }
     })
+    // 部署到服务器上时，解决前端 history模式的路由问题，返回前端打包好的index.html
     router.get('/file', (req, res) => {
-        // res.sendFile(path.join(__dirname, "../index.html"))
         res.sendFile(path.join(__dirname, "../index.html"))
     })
     router.get('/me', function (req, res) {
@@ -161,6 +132,7 @@ module.exports = function (options) {
             })
         }
     })
+    // 部署到服务器上时，解决前端 history模式的路由问题，返回前端打包好的index.html
     router.get('/login', function (req, res) {
         res.sendFile(path.join(__dirname, "../index.html"))
     })
@@ -243,6 +215,7 @@ module.exports = function (options) {
             }
         })
     })
+    // 部署到服务器上时，解决前端 history模式的路由问题，返回前端打包好的index.html
     router.get('/register', function (req, res) {
         res.sendFile(path.join(__dirname, "../index.html"))
     })
