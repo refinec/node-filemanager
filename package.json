@@ -1,0 +1,42 @@
+{
+  "name": "larfoss-node",
+  "version": "1.0.0",
+  "description": "基于Aliyun OSS的nodejs文件管理连接器",
+  "main": "larfOss.js",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:refinec/larfoss-node.git"
+  },
+  "keywords": [
+    "Aliyun OSS",
+    "laravel",
+    "nodejs",
+    "connector"
+  ],
+  "bugs": {
+    "url": "https://github.com/refinec/larfoss-node/issues"
+  },
+  "homepage": "https://github.com/refinec/larfoss-node",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "refinec",
+  "license": "MIT",
+  "dependencies": {
+    "ali-oss": "^6.13.2",
+    "archiver": "^5.0.0",
+    "async": "^3.2.0",
+    "blueimp-md5": "^2.18.0",
+    "compression": "^1.7.4",
+    "connect-history-api-fallback": "^1.6.0",
+    "connect-mongo": "^4.4.1",
+    "cors": "^2.8.5",
+    "express": "^4.17.1",
+    "express-session": "^1.17.1",
+    "formidable": "^1.2.2",
+    "fs-extra": "^9.0.1",
+    "mime-types": "^2.1.27",
+    "mongodb": "^3.6.5",
+    "unzip": "^0.1.11"
+  }
+}
