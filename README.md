@@ -9,7 +9,7 @@
 ## Installation
 
 ```
-npm install node-filemanager --save
+npm install node-oss-filemanager --save
 ```
 
 ## Usage
