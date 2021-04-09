@@ -19,7 +19,7 @@ npm install node-oss-filemanager --save
 ```javascript
 const express = require("express");
 const app = express();
-const larfOss = require("./node-filemanager");
+const larfOss = require("./node-oss-filemanager");
 
 const ossOptions = {
     accesskey: '', //通过阿里云控制台创建的AccessKey
