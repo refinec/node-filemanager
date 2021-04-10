@@ -6,7 +6,7 @@ const fs = require("fs-extra");
 const mime = require('mime-types');
 const compress = require('compression');
 const session = require("express-session");
-const history = require('connect-history-api-fallback');
+// const history = require('connect-history-api-fallback');
 const md5 = require('blueimp-md5')
 const MongoStore = require('connect-mongo'); // connect-mongo会在该 Client下创建一个sessions的数据表
 const {
@@ -283,7 +283,6 @@ module.exports = function (options) {
     })
 
     router.get('/tree', (req, res) => {
-
         res.type('json');
         api.showDirectories(req.query.disk, req.query.path).then((data) => {
             res.send(data);
@@ -291,12 +290,41 @@ module.exports = function (options) {
     })
 
     router.get('/content', (req, res) => {
+        console.log(req.query);
         api.content(req.query.disk, req.query.path)
             .then((data) => {
                 res.send(data);
             })
     })
+    router.get('/file-author', (req, res) => {
+        console.log("req.query.filePath", req.query.filePath);
+        if (req.query.filePath) {
+            internalClient.getObjectTagging(req.query.filePath + '/').then(result => {
+                res.send({
+                    result: {
+                        status: "success"
+                    },
+                    author: result.tag.author
+                })
+            }).catch((err) => {
+                console.error(err);
+                res.send({
+                    result: {
+                        status: "success"
+                    },
+                    author: ""
+                })
+            })
+        } else {
+            res.send({
+                result: {
+                    status: "success"
+                },
+                author: ""
+            })
+        }
 
+    })
     router.get('/select-disk', (req, res) => {
         const hasDisk = defaultConfig.get('diskList').some((item) => {
             return item === api.drive(req.query.disk)
@@ -315,6 +343,7 @@ module.exports = function (options) {
         })
     });
     router.get('/download-file', (req, res) => {
+
         if (path.extname(path.basename(req.query.path)) === '.txt') {
             (async () => {
                 try {
@@ -339,6 +368,7 @@ module.exports = function (options) {
         }
     })
     router.get("/download", (req, res) => {
+
         (async () => {
             try {
                 let result = await internalClient.getStream(req.query.path);
@@ -389,10 +419,16 @@ module.exports = function (options) {
                     let size = fs.statSync(files.file.path).size;
                     let result = await internalClient.putStream(
                         fields.path, stream, {
-                            contentLength: size
+                            contentLength: size,
+                            headers: {
+                                'x-oss-tagging': `author=${req.session.user}`,
+                            }
                         });
+                    // await internalClient.putObjectTagging(fields.path, {
+                    //     author: req.session.user
+                    // });
                     if (result.res.status === 200) {
-                        api.updateOssFileProperty(fields.disk, fields.path).then((prop) => {
+                        api.updateOssFileProperty(fields.disk, fields.path, req.session.user).then((prop) => {
                             res.send({
                                 result: {
                                     status: 'success',
@@ -501,7 +537,7 @@ module.exports = function (options) {
                 });
             }
             currentFile = data.path ? `${data.path}/${data.name}` : `${data.name}`;
-            api.createOssFile(data.disk, currentFile).then(result => {
+            api.createOssFile(data.disk, currentFile, req.session.user).then(result => {
                 if (result === 'createErr') {
                     res.send({
                         result: {
@@ -545,7 +581,7 @@ module.exports = function (options) {
                     }
                 });
             }
-            api.createOssDirectory(data.disk, currentFile).then((result) => {
+            api.createOssDirectory(data.disk, currentFile, req.session.user).then((result) => {
                 if (result === 'createErr') {
                     res.send({
                         result: {
@@ -629,11 +665,12 @@ module.exports = function (options) {
                     copyClient = copyMap.get("internalClientTwo");
                 }
             }
+            console.log("复制req.session.user", req.session.user);
             data.clipboard.directories.forEach(sourceDir => {
                 let destDir = toPath + path.basename(sourceDir) + '/';
                 (async () => {
                     try {
-                        let message = await api.copyOssFolder(destDir, sourceDir + '/', fromOrign, copyClient);
+                        let message = await api.copyOssFolder(destDir, sourceDir + '/', req.session.user, fromOrign, copyClient);
                         message === 'err' ? promiseArr.push(Promise.resolve(false)) : promiseArr.push(Promise.resolve(true));
                     } catch (error) {
                         console.error(error);
@@ -642,7 +679,13 @@ module.exports = function (options) {
             })
             data.clipboard.files.forEach(sourceDir => {
                 let destDir = toPath + path.basename(sourceDir);
-                promiseArr.push(internalClient.copy(destDir, fromOrign + sourceDir));
+                promiseArr.push(internalClient.copy(destDir, fromOrign + sourceDir, {
+                    headers: {
+                        'x-oss-tagging': `author=${req.session.user}`,
+                        // 指定如何设置目标Object的对象标签。取值为Copy或Replace。其中Copy为默认值，表示复制源Object的对象标签到目标Object。Replace表示忽略源Object的对象标签，直接采用请求中指定的对象标签。
+                        'x-oss-tagging-directive': 'Replace'
+                    }
+                }));
             })
             Promise.all(promiseArr).then((isTrue) => {
                 if (isTrue) {
@@ -713,10 +756,17 @@ module.exports = function (options) {
                 let newName = data.oldName.split('/');
                 newName.pop();
                 newName = newName.join('/') + '/' + fileName;
+                console.log("重命名req.session.user", req.session.user);
                 if (isFile) {
                     (async () => {
                         try {
-                            let info = await internalClient.copy(newName, data.oldName);
+                            let info = await internalClient.copy(newName, data.oldName, {
+                                headers: {
+                                    'x-oss-tagging': `author=${req.session.user}`,
+                                    // 指定如何设置目标Object的对象标签。取值为Copy或Replace。其中Copy为默认值，表示复制源Object的对象标签到目标Object。Replace表示忽略源Object的对象标签，直接采用请求中指定的对象标签。
+                                    'x-oss-tagging-directive': 'Replace'
+                                }
+                            });
                             if (info.res.status === 200) {
                                 let result = await internalClient.delete(data.oldName);
                                 if (result.res.status === 200) {
@@ -745,7 +795,7 @@ module.exports = function (options) {
                     })();
                 } else {
                     try {
-                        api.copyOssFolder(`${newName}${Slash}`, `${data.oldName}${Slash}`).then(message => {
+                        api.copyOssFolder(`${newName}${Slash}`, `${data.oldName}${Slash}`, req.session.user).then(message => {
                             if (message === 'err') {
                                 return res.send({
                                     result: {
@@ -828,6 +878,15 @@ module.exports = function (options) {
         });
 
         form.parse(req, (err, fields, files) => {
+            function deleteFiles(fileArr) {
+                fileArr.forEach(filepath => {
+                    fs.unlink(filepath, function (err) {
+                        if (err) {
+                            console.error(err);
+                        }
+                    })
+                })
+            }
             let file = JSON.parse(JSON.stringify(files['files[]']));
             file = file instanceof Array ? file : [file];
             let ossFilePath = [];
@@ -844,7 +903,7 @@ module.exports = function (options) {
             if (overwrite) {
                 try {
                     fileName.forEach((item, index) => {
-                        renamePromiseArr.push(putStream(fromPath[index], `${savePath}${item}`, file[index].size));
+                        renamePromiseArr.push(putStream(fromPath[index], `${savePath}${item}`, file[index].size, req.session.user));
                     })
                     Promise.all(renamePromiseArr).then(result => {
                         if (result) {
@@ -862,122 +921,122 @@ module.exports = function (options) {
                             }
                         })
                     }).catch(e => e)
+                    deleteFiles(fromPath);
                 } catch (error) {
                     console.error(error);
                 }
-            }
-            // 不覆盖源文件
-            internalClient.list({
-                prefix: savePath, //只列出符合特定前缀的文件
-                delimiter: '/'
-            }).then((filesList) => {
-                if (filesList.objects[0].name === savePath) {
-                    filesList.objects.shift();
-                }
-
-                //该目录下无文件
-                if (!filesList.objects.length) {
-                    try {
-                        fileName.forEach((item, index) => {
-                            renamePromiseArr.push(putStream(fromPath[index], `${savePath}${item}`, file[index].size));
-                        })
-                        Promise.all(renamePromiseArr).then(result => {
-                            if (result) {
-                                res.send({
-                                    result: {
-                                        status: "success",
-                                        message: "upload"
-                                    }
-                                })
-                            } else {
-                                res.send({
-                                    result: {
-                                        status: "danger",
-                                        message: "uploadError"
-                                    }
-                                })
-                            }
-                            deleteFiles(fromPath);
-                        }).catch(e => e)
-                    } catch (error) {
-                        console.error(error);
+            } else {
+                // 不覆盖源文件
+                internalClient.list({
+                    prefix: savePath, //只列出符合特定前缀的文件
+                    delimiter: '/'
+                }).then((filesList) => {
+                    if (filesList.objects[0].name === savePath) {
+                        filesList.objects.shift();
                     }
-                } else {
-                    //该目录下有文件
-                    try {
-                        fileName.forEach((name, index) => {
-                            let filePath = `${savePath}${name}`;
-                            let suffixNum = 0,
-                                flag = false;
-                            ossFilePath.push(filePath);
-                            (filesList.objects || []).forEach((item) => {
-                                if (item.name.lastIndexOf('/') === item.name.length - 1) return;
-                                let suffix = path.basename(item.name, path.extname(name));
-                                //文件名和扩展名都相同
-                                if (name.replace(/\.(?<=\.).*/g, "") === suffix.replace(/\(.*\)/, "") && path.extname(name) === path.extname(path.basename(item.name))) {
-                                    if (!suffix.match(/\(.*\)/)) { //is null
-                                        // suffixNum = 0;
+
+                    //该目录下无文件
+                    if (!filesList.objects.length) {
+                        try {
+                            fileName.forEach((item, index) => {
+                                renamePromiseArr.push(putStream(fromPath[index], `${savePath}${item}`, file[index].size, req.session.user));
+                            })
+                            Promise.all(renamePromiseArr).then(result => {
+                                if (result) {
+                                    res.send({
+                                        result: {
+                                            status: "success",
+                                            message: "upload"
+                                        }
+                                    })
+                                } else {
+                                    res.send({
+                                        result: {
+                                            status: "danger",
+                                            message: "uploadError"
+                                        }
+                                    })
+                                }
+                                deleteFiles(fromPath);
+                            }).catch(e => e)
+                        } catch (error) {
+                            console.error(error);
+                        }
+                    } else {
+                        //该目录下有文件
+                        try {
+                            fileName.forEach((name, index) => {
+                                let filePath = `${savePath}${name}`;
+                                let suffixNum = 0,
+                                    flag = false;
+                                ossFilePath.push(filePath);
+                                (filesList.objects || []).forEach((item) => {
+                                    if (item.name.lastIndexOf('/') === item.name.length - 1) return;
+                                    let suffix = path.basename(item.name, path.extname(name));
+                                    //文件名和扩展名都相同
+                                    if (name.replace(/\.(?<=\.).*/g, "") === suffix.replace(/\(.*\)/, "") && path.extname(name) === path.extname(path.basename(item.name))) {
+                                        if (!suffix.match(/\(.*\)/)) { //is null
+                                            // suffixNum = 0;
+                                            flag = true;
+                                            return;
+                                        }
+                                        let numMatch = suffix.match(/\(.*\)/)[0].match(/\d+/);
+                                        let num = suffix.match(/\(.*\)/) ? Number(numMatch ? numMatch[0] : 0) : 0;
+                                        suffixNum = num > suffixNum ? num : suffixNum; //文件括号中的数值
                                         flag = true;
-                                        return;
                                     }
-                                    let numMatch = suffix.match(/\(.*\)/)[0].match(/\d+/);
-                                    let num = suffix.match(/\(.*\)/) ? Number(numMatch ? numMatch[0] : 0) : 0;
-                                    suffixNum = num > suffixNum ? num : suffixNum; //文件括号中的数值
-                                    flag = true;
+                                })
+                                let suffixName = !flag ? name : name.replace(/(.*)(?=\.)/, `$1(${suffixNum+1})`);
+                                renamePromiseArr.push(putStream(fromPath[index], `${savePath}${suffixName}`, file[index].size, req.session.user));
+                            });
+                        } catch (error) {
+                            console.error(error);
+                        }
+                        Promise.all(renamePromiseArr).then(() => {
+                            res.send({
+                                result: {
+                                    status: "success",
+                                    message: "upload"
                                 }
                             })
-                            let suffixName = !flag ? name : name.replace(/(.*)(?=\.)/, `$1(${suffixNum+1})`);
-                            renamePromiseArr.push(putStream(fromPath[index], `${savePath}${suffixName}`, file[index].size));
-                        });
-                    } catch (error) {
-                        console.error(error);
-                    }
-                    Promise.all(renamePromiseArr).then(() => {
-                        res.send({
-                            result: {
-                                status: "success",
-                                message: "upload"
-                            }
+                            deleteFiles(fromPath);
+                        }).catch(e => {
+                            console.error("renameError:", e);
+                            res.send({
+                                result: {
+                                    status: "danger",
+                                    message: "uploadError"
+                                }
+                            });
+                            deleteFiles(fromPath);
                         })
-                        deleteFiles(fromPath);
-                    }).catch(e => {
-                        console.error("renameError:", e);
-                        res.send({
-                            result: {
-                                status: "danger",
-                                message: "uploadError"
-                            }
-                        });
-                        deleteFiles(fromPath);
-                    })
-                }
-            }).catch(e => {
-                res.send({
-                    result: {
-                        status: "danger",
-                        message: "uploadPathError"
                     }
-                });
-                deleteFiles(fromPath);
-            });
-
-            function deleteFiles(fileArr) {
-                fileArr.forEach(filepath => {
-                    fs.unlink(filepath, function (err) {
-                        if (err) {
-                            console.error(err);
+                }).catch(e => {
+                    res.send({
+                        result: {
+                            status: "danger",
+                            message: "uploadPathError"
                         }
-                    })
-                })
+                    });
+                    deleteFiles(fromPath);
+                });
             }
 
-            async function putStream(localfile, ossfile, size) {
+
+
+            async function putStream(localfile, ossfile, size, author = "") {
                 try {
                     let stream = fs.createReadStream(localfile);
                     let result = await internalClient.putStream(
                         ossfile, stream, {
-                            contentLength: size
+                            contentLength: size,
+                            headers: {
+                                'x-oss-tagging': `author=${author}`,
+                            }
                         });
+                    // await internalClient.putObjectTagging(ossfile, {
+                    //     author: author
+                    // });
                     if (result.res.status === 200) {
                         return true;
                     }

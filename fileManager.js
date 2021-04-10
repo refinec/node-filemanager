@@ -1,6 +1,9 @@
 const defaultConfig = require('./defaultConfigtion');
 const fs = require('fs-extra');
 const path = require('path');
+const {
+    log
+} = require('console');
 // const archiver = require('archiver');
 // const unzip = require('unzip');
 
@@ -62,6 +65,7 @@ module.exports = function (internalClient) {
                 prefix: dir,
                 delimiter: '/'
             });
+            let author = await internalClient.getObjectTagging(dir);
             if (!fileObj.objects && !fileObj.prefixes) {
                 return {
                     result: {
@@ -69,64 +73,74 @@ module.exports = function (internalClient) {
                         'message': "fileNotExist"
                     },
                     directories: [],
-                    files: []
+                    files: [],
+                    author: author.tag.author
                 };
-            }
-            return this.getTimeStamp(fileObj.prefixes).then(timeStamp => {
-                (fileObj.prefixes || []).forEach((item, index) => {
-                    try {
+            } else {
+                return this.getTimeStamp(fileObj.prefixes).then(async (timeStamp) => {
+                    // console.log("fileObj.prefixes", fileObj.prefixes);
+                    for (let [index, item] of Object.entries(fileObj.prefixes || [])) {
+                        try {
+                            let tempDir = {};
+                            tempDir.id = index;
+                            tempDir.basename = path.basename(item);
+                            tempDir.dirname = item;
+                            tempDir.path = item.replace(/\/$/g, "");
+                            tempDir.parentId = index;
+                            tempDir.timestamp = timeStamp[index];
+                            tempDir.acl = acl;
+                            tempDir.size = 0;
+                            tempDir.type = "dir";
+                            tempDir.props = {
+                                hasSubdirectories: true,
+                                subdirectoriesLoaded: false,
+                                showSubdirectories: true
+                            };
+                            let auth = await internalClient.getObjectTagging(item);
+                            tempDir.author = auth.tag.author || "";
+                            directories.push(tempDir);
+                        } catch (error) {
+                            console.log(error);
+                        }
+                    }
+                    // console.log("fileObj.objects", fileObj.objects);
+                    for (let [index, item] of Object.entries(fileObj.objects || [])) {
+                        if (item.name.lastIndexOf('/') === item.name.length - 1) {
+                            continue;
+                        }
                         let tempDir = {};
                         tempDir.id = index;
-                        tempDir.basename = path.basename(item);
-                        tempDir.dirname = item;
-                        tempDir.path = item.replace(/\/$/g, "");
+                        tempDir.basename = path.basename(item.name);
+                        tempDir.filename = path.basename(item.name, path.extname(item.name));
+                        tempDir.dirname = item.name;
+                        tempDir.path = item.name;
                         tempDir.parentId = index;
-                        tempDir.timestamp = timeStamp[index];
+                        tempDir.timestamp = new Date(item.lastModified).getTime() / 1000;
                         tempDir.acl = acl;
-                        tempDir.size = 0;
-                        tempDir.type = "dir";
+                        tempDir.size = item.size;
+                        tempDir.type = "file";
+                        tempDir.extension = path.extname(item.name).replace(/\./, "");
                         tempDir.props = {
-                            hasSubdirectories: true,
-                            subdirectoriesLoaded: false,
-                            showSubdirectories: true
+                            hasSubdirectories: false,
+                            subdirectoriesLoaded: true,
+                            showSubdirectories: false
                         };
-                        directories.push(tempDir);
-                    } catch (error) {
-                        console.log(error);
+                        let auth = await internalClient.getObjectTagging(item.name);
+                        tempDir.author = auth.tag.author || "";
+                        file.push(tempDir);
                     }
-                });
-                (fileObj.objects || []).forEach((item, index) => {
-                    if (item.name.lastIndexOf('/') === item.name.length - 1) {
-                        return;
-                    }
-                    let tempDir = {};
-                    tempDir.id = index;
-                    tempDir.basename = path.basename(item.name);
-                    tempDir.filename = path.basename(item.name, path.extname(item.name));
-                    tempDir.dirname = item.name;
-                    tempDir.path = item.name;
-                    tempDir.parentId = index;
-                    tempDir.timestamp = new Date(item.lastModified).getTime() / 1000;
-                    tempDir.acl = acl;
-                    tempDir.size = item.size;
-                    tempDir.type = "file";
-                    tempDir.extension = path.extname(item.name).replace(/\./, "");
-                    tempDir.props = {
-                        hasSubdirectories: false,
-                        subdirectoriesLoaded: true,
-                        showSubdirectories: false
+                    return {
+                        result: {
+                            'status': 'success',
+                            'message': null
+                        },
+                        directories: directories,
+                        files: file,
+                        author: author.tag.author
                     };
-                    file.push(tempDir);
-                })
-                return {
-                    result: {
-                        'status': 'success',
-                        'message': null
-                    },
-                    directories: directories,
-                    files: file
-                };
-            });
+                });
+            }
+
         } catch (err_1) {
             console.error(err_1);
         }
@@ -209,7 +223,7 @@ module.exports = function (internalClient) {
      * 创建oss目录
      * @param {string} dir 
      */
-    api.createOssDirectory = function (disk = "", dir = "") {
+    api.createOssDirectory = function (disk = "", dir = "", author = "") {
         return new Promise((resolve) => {
             internalClient.get(dir).then((result) => {
                 if (result.res.status == 200) {
@@ -218,7 +232,11 @@ module.exports = function (internalClient) {
             }).catch((e) => {
                 // 目录不存在则创建目录
                 if (e.code == 'NoSuchKey') {
-                    resolve(internalClient.put(dir, Buffer.from('')).then((result) => {
+                    resolve(internalClient.put(dir, Buffer.from(''), {
+                        headers: {
+                            'x-oss-tagging': `author=${author}`,
+                        }
+                    }).then((result) => {
                         if (result.res.status == 200) {
                             return internalClient.get(dir)
                         }
@@ -236,6 +254,7 @@ module.exports = function (internalClient) {
                         tempDir.basename = path.basename(dir);
                         tempDir.type = "dir";
                         tempDir.acl = acl;
+                        tempDir.author = author;
                         tempDir.props = {
                             hasSubdirectories: true,
                             subdirectoriesLoaded: false,
@@ -250,7 +269,7 @@ module.exports = function (internalClient) {
         }).catch(e => e);
     }
 
-    api.createOssFile = function (disk = "", dir = "") {
+    api.createOssFile = function (disk = "", dir = "", author = "") {
         return new Promise((resolve) => {
             internalClient.get(dir).then((result) => {
                 if (result.res.status == 200) {
@@ -259,7 +278,11 @@ module.exports = function (internalClient) {
             }).catch((e) => {
                 // 文件不存在则创建文件
                 if (e.code == 'NoSuchKey') {
-                    resolve(internalClient.put(dir, Buffer.from('')).then((result) => {
+                    resolve(internalClient.put(dir, Buffer.from(''), {
+                        headers: {
+                            'x-oss-tagging': `author=${author}`,
+                        }
+                    }).then((result) => {
                         if (result.res.status == 200) {
                             return internalClient.get(dir)
                         }
@@ -279,6 +302,7 @@ module.exports = function (internalClient) {
                         tempDir.dirname = dir;
                         tempDir.type = "file";
                         tempDir.acl = acl;
+                        tempDir.author = author;
                         tempDir.extension = path.extname(path.basename(dir)).replace(/\./, "");
                         tempDir.props = {
                             hasSubdirectories: false,
@@ -298,7 +322,7 @@ module.exports = function (internalClient) {
      * 更新oss文件属性
      * @param {string} dir 
      */
-    api.updateOssFileProperty = function (disk = '', dir = '') {
+    api.updateOssFileProperty = function (disk = '', dir = '', author = '') {
         return internalClient.get(dir).then((info) => {
             return Promise.resolve({
                 time: new Date(info.res.headers['last-modified']).getTime(),
@@ -320,6 +344,7 @@ module.exports = function (internalClient) {
                     subdirectoriesLoaded: true,
                     showSubdirectories: false
                 };
+                tempDir.author = author;
                 return tempDir;
             }).catch(e => {
                 console.error(e);
@@ -428,11 +453,15 @@ module.exports = function (internalClient) {
         }).catch(e => e)
     }
 
-    api.copyOssFolder = async function (destDir, sourceDir, fromOrign = "", copyClient) {
+    api.copyOssFolder = async function (destDir, sourceDir, author = "", fromOrign = "", copyClient) {
         console.log("destDir:", destDir, "sourceDir:", sourceDir,
             "fromOrign:", fromOrign);
         try {
-            let result = await internalClient.put(destDir, Buffer.from('')); //创建文件
+            let result = await internalClient.put(destDir, Buffer.from(''), {
+                headers: {
+                    'x-oss-tagging': `author=${author}`,
+                }
+            }); //创建文件
             let copyInternalClient = null;
             if (result.res.status === 200) {
                 copyInternalClient = fromOrign ? copyClient : internalClient;
@@ -450,9 +479,13 @@ module.exports = function (internalClient) {
                         return;
                     }
                     let dirPath = `${destDir}${path.basename(item.name)}`;
-                    console.log("dirPath", dirPath,
-                        "item.name ", item.name);
-                    internalClient.copy(dirPath, fromOrign + item.name).catch(error => {
+                    internalClient.copy(dirPath, fromOrign + item.name, {
+                        headers: {
+                            'x-oss-tagging': `author=${author}`,
+                            // 指定如何设置目标Object的对象标签。取值为Copy或Replace。其中Copy为默认值，表示复制源Object的对象标签到目标Object。Replace表示忽略源Object的对象标签，直接采用请求中指定的对象标签。
+                            'x-oss-tagging-directive': 'Replace'
+                        }
+                    }).catch(error => {
                         return 'err';
                     });
                 });
@@ -460,7 +493,7 @@ module.exports = function (internalClient) {
                     let dirPath = `${destDir}${path.basename(item)}/`;
                     (async () => {
                         try {
-                            await this.copyOssFolder(dirPath, item, fromOrign, copyClient);
+                            await this.copyOssFolder(dirPath, item, author, fromOrign, copyClient);
                             if (fileObj.prefixes.length - 1 === index) {
                                 return 'end';
                             }
