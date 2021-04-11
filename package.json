@@ -1,22 +1,20 @@
 {
-  "name": "larfoss-node",
-  "version": "1.0.0",
-  "description": "基于Aliyun OSS的nodejs文件管理连接器",
+  "name": "node-oss-filemanager",
+  "version": "1.0.2",
+  "description": "基于Aliyun OSS对象存储的Node.js网盘管理后台",
   "main": "larfOss.js",
   "repository": {
     "type": "git",
-    "url": "git@github.com:refinec/larfoss-node.git"
+    "url": "git@github.com:refinec/node-filemanager.git"
   },
   "keywords": [
     "Aliyun OSS",
-    "laravel",
-    "nodejs",
-    "connector"
+    "nodejs"
   ],
   "bugs": {
-    "url": "https://github.com/refinec/larfoss-node/issues"
+    "url": "https://github.com/refinec/node-filemanager/issues"
   },
-  "homepage": "https://github.com/refinec/larfoss-node",
+  "homepage": "https://github.com/refinec/node-filemanager/tree/main",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
